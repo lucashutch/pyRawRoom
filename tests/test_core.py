@@ -152,6 +152,16 @@ class TestSharpenImage:
         assert result.size == pil_img.size
         assert result.mode == pil_img.mode
 
+    def test_sharpening_with_floats(self):
+        """Regression test for TypeError when floats are passed to sharpen_image"""
+        pil_img = Image.new('RGB', (10, 10), color=(128, 128, 128))
+
+        # UI passes these as floats from division
+        try:
+            pyrawroom.sharpen_image(pil_img, radius=2.5, percent=150.0)
+        except TypeError as e:
+            pytest.fail(f"sharpen_image failed with floats: {e}")
+
 
 class TestSaveImage:
     """Tests for the save_image function"""
@@ -202,3 +212,46 @@ class TestSaveImage:
             with patch.object(pyrawroom.core, 'HEIF_SUPPORTED', False):
                 with pytest.raises(RuntimeError, match="HEIF requested but pillow-heif not installed"):
                     pyrawroom.save_image(pil_img, output_path)
+
+class TestSidecars:
+    """Tests for sidecar file logic"""
+
+    def test_sidecar_path(self):
+        raw_path = "/tmp/test.dng"
+        expected = "/tmp/.pyRawRoom/test.dng.json"
+        assert pyrawroom.core.get_sidecar_path(raw_path) == expected
+
+    def test_save_load_sidecar(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            raw_path = os.path.join(tmpdir, "test.dng")
+            settings = {"exposure": 1.5, "blacks": 0.05}
+
+            pyrawroom.save_sidecar(raw_path, settings)
+
+            # Check file exists
+            sidecar_path = pyrawroom.core.get_sidecar_path(raw_path)
+            assert os.path.exists(sidecar_path)
+
+            # Load and verify
+            loaded = pyrawroom.load_sidecar(raw_path)
+            assert loaded == settings
+
+    def test_rename_sidecar(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_raw = os.path.join(tmpdir, "old.dng")
+            new_raw = os.path.join(tmpdir, "new.dng")
+            settings = {"exposure": 1.5}
+
+            pyrawroom.save_sidecar(old_raw, settings)
+            old_sidecar = pyrawroom.core.get_sidecar_path(old_raw)
+            assert os.path.exists(old_sidecar)
+
+            pyrawroom.core.rename_sidecar(old_raw, new_raw)
+
+            new_sidecar = pyrawroom.core.get_sidecar_path(new_raw)
+            assert os.path.exists(new_sidecar)
+            assert not os.path.exists(old_sidecar)
+
+            # Verify data survived
+            loaded = pyrawroom.load_sidecar(new_raw)
+            assert loaded == settings
