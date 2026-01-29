@@ -104,6 +104,7 @@ class GalleryWidget(QtWidgets.QWidget):
 
 
 # ----------------- Editor Widget -----------------
+class EditorWidget(QtWidgets.QWidget):
     def __init__(self, thread_pool):
         super().__init__()
         self.thread_pool = thread_pool
