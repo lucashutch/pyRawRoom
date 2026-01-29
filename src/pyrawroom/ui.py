@@ -587,15 +587,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def open_editor(self, path):
         # Determine folder from path
-        folder = os.path.dirname(path)
+        path = Path(path)
+        folder = path.parent
 
         # Load the image
         self.editor.load_image(path)
 
         # Update carousel if needed
-        if self.editor.current_folder != folder:
-            self.editor.load_carousel_folder(folder)
-
         if self.editor.current_folder != folder:
             self.editor.load_carousel_folder(folder)
 
