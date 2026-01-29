@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 import numpy as np
+import os
+import json
+import time
 
 SUPPORTED_EXTS = (".cr3", ".CR3", ".cr2", ".CR2", ".dng", ".DNG")
 
@@ -165,7 +168,7 @@ def extract_thumbnail(path):
 
 def sharpen_image(pil_img, radius, percent):
     return pil_img.filter(
-        ImageFilter.UnsharpMask(radius=radius, percent=percent)
+        ImageFilter.UnsharpMask(radius=float(radius), percent=int(percent))
     )
 
 def save_image(pil_img, output_path, quality=95):
@@ -178,3 +181,67 @@ def save_image(pil_img, output_path, quality=95):
         pil_img.save(output_path, format="HEIF", quality=quality)
     else:
         raise ValueError(f"Unsupported format: {fmt}")
+
+
+# ---------------- Sidecar Files ----------------
+SIDECAR_DIR = ".pyRawRoom"
+
+def get_sidecar_path(raw_path):
+    """
+    Returns the absolute path to the sidecar JSON file for a given RAW file.
+    Sidecars are stored in a hidden .pyRawRoom directory local to the image.
+    """
+    dir_name = os.path.dirname(raw_path)
+    base_name = os.path.basename(raw_path)
+    sidecar_dir = os.path.join(dir_name, SIDECAR_DIR)
+    return os.path.join(sidecar_dir, f"{base_name}.json")
+
+def save_sidecar(raw_path, settings):
+    """
+    Saves edit settings to a JSON sidecar file.
+    """
+    sidecar_path = get_sidecar_path(raw_path)
+    sidecar_dir = os.path.dirname(sidecar_path)
+
+    if not os.path.exists(sidecar_dir):
+        os.makedirs(sidecar_dir, exist_ok=True)
+
+    data = {
+        "version": "1.0",
+        "last_modified": time.time(),
+        "raw_path": raw_path,
+        "settings": settings
+    }
+
+    with open(sidecar_path, 'w') as f:
+        json.dump(data, f, indent=4)
+
+def load_sidecar(raw_path):
+    """
+    Loads edit settings from a JSON sidecar file if it exists.
+    Returns the settings dict or None.
+    """
+    sidecar_path = get_sidecar_path(raw_path)
+    if not os.path.exists(sidecar_path):
+        return None
+
+    try:
+        with open(sidecar_path, 'r') as f:
+            data = json.load(f)
+            return data.get("settings")
+    except Exception as e:
+        print(f"Error loading sidecar {sidecar_path}: {e}")
+        return None
+
+def rename_sidecar(old_raw_path, new_raw_path):
+    """
+    Renames a sidecar file when the original RAW is moved/renamed.
+    """
+    old_sidecar = get_sidecar_path(old_raw_path)
+    new_sidecar = get_sidecar_path(new_raw_path)
+
+    if os.path.exists(old_sidecar):
+        new_dir = os.path.dirname(new_sidecar)
+        if not os.path.exists(new_dir):
+            os.makedirs(new_dir, exist_ok=True)
+        os.rename(old_sidecar, new_sidecar)

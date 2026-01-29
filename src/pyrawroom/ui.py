@@ -46,11 +46,17 @@ class RawLoader(QtCore.QRunnable):
 
     def run(self):
         try:
-            # Load Proxy (Half-Res)
+            # 1. Load Proxy (Half-Res)
             img = pyrawroom.open_raw(self.path, half_size=True)
 
-            # Calculate Auto-Exposure on the proxy
-            settings = pyrawroom.calculate_auto_exposure(img)
+            # 2. Check for Sidecar Settings
+            settings = pyrawroom.load_sidecar(self.path)
+            mode = "sidecar"
+
+            # 3. Fallback to Auto-Exposure
+            if not settings:
+                settings = pyrawroom.calculate_auto_exposure(img)
+                mode = "auto"
 
             self.signals.finished.emit(self.path, img, settings)
         except Exception as e:
@@ -136,6 +142,12 @@ class EditorWidget(QtWidgets.QWidget):
         self.base_img_full = None
         self.base_img_preview = None
         self.current_qpixmap = None
+
+        # Auto-save timer
+        self.save_timer = QtCore.QTimer()
+        self.save_timer.setSingleShot(True)
+        self.save_timer.timeout.connect(self._auto_save_sidecar)
+
         self._init_ui()
 
     def _init_ui(self):
@@ -251,6 +263,9 @@ class EditorWidget(QtWidgets.QWidget):
             setattr(self, var_name, actual)
             self.request_update()
 
+            # Trigger auto-save
+            self.save_timer.start(1000) # Save after 1 second of inactivity
+
         slider.valueChanged.connect(on_change)
 
         # Store refs
@@ -275,6 +290,24 @@ class EditorWidget(QtWidgets.QWidget):
     def _update_sharpen_state(self, checked):
         self.var_sharpen_enabled = checked
         self.request_update()
+        self.save_timer.start(500)
+
+    def _auto_save_sidecar(self):
+        if not self.raw_path:
+            return
+
+        settings = {
+            "exposure": self.val_exposure,
+            "whites": self.val_whites,
+            "blacks": self.val_blacks,
+            "highlights": self.val_highlights,
+            "shadows": self.val_shadows,
+            "saturation": self.val_saturation,
+            "sharpen_enabled": self.var_sharpen_enabled,
+            "sharpen_radius": self.val_radius,
+            "sharpen_percent": self.val_percent
+        }
+        pyrawroom.save_sidecar(self.raw_path, settings)
 
     def load_image(self, path):
         self.lbl_info.setText(f"Loading: {os.path.basename(path)}")
@@ -323,9 +356,15 @@ class EditorWidget(QtWidgets.QWidget):
             self._set_slider_value("val_whites", settings.get("whites", 1.0))
             self._set_slider_value("val_blacks", settings.get("blacks", 0.0))
             self._set_slider_value("val_saturation", settings.get("saturation", 1.0))
-            # Don't overwrite user preference for highlights/shadows usually, but here reset is fine
-            self._set_slider_value("val_highlights", 0.0)
-            self._set_slider_value("val_shadows", 0.0)
+            self._set_slider_value("val_highlights", settings.get("highlights", 0.0))
+            self._set_slider_value("val_shadows", settings.get("shadows", 0.0))
+
+            # Sharpening state
+            sharpen_on = settings.get("sharpen_enabled", False)
+            self.sharpen_checkbox.setChecked(sharpen_on)
+            self.var_sharpen_enabled = sharpen_on
+            self._set_slider_value("val_radius", settings.get("sharpen_radius", 2.0))
+            self._set_slider_value("val_percent", settings.get("sharpen_percent", 150))
 
         # Create high-quality preview (max 1000px) from proxy
         # Since proxy is smaller, it might already be close to screen size
